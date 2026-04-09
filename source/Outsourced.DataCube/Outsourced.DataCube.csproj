@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Outsourced.DataCube</AssemblyName>
+    <RootNamespace>Outsourced.DataCube</RootNamespace>
+    <Description>An in-memory analytics cube for .NET with dimensions, metrics, and fact groups for reusable business analysis inside your application.</Description>
+    <PackageId>Outsourced.DataCube</PackageId>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

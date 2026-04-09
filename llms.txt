@@ -1,0 +1,12 @@
+# Outsourced.DataCube
+
+README.md
+.ai/architecture.md
+.ai/tech-stack.md
+.ai/coding-style.md
+docs/performance-benchmarks.md
+docs/publish-checklist.md
+docs/index.html
+docs/Outsourced.DataCube.xml
+docs/Outsourced.DataCube.Json.NewtonSoft.xml
+docs/Outsourced.DataCube.Json.SystemText.xml

@@ -1,0 +1,38 @@
+# Build results
+/artifacts/
+bin/
+obj/
+out/
+[Dd]ebug/
+[Rr]elease/
+*.nupkg
+*.snupkg
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.sln.iml
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# .NET
+project.lock.json
+*.nuget.props
+*.nuget.targets
+*.binlog
+
+# Testing
+TestResults/
+*.coverage
+
+# Project specific
+.env
+.gemini/
+.claude/
+.codex/

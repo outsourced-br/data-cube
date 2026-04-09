@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Outsourced.DataCube.Json.NewtonSoft.Tests</AssemblyName>
+    <RootNamespace>Outsourced.DataCube.Json.NewtonSoft.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+    <PackageReference Include="NUnit" Version="4.1.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="NUnit.Analyzers" Version="4.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\source\Outsourced.DataCube\Outsourced.DataCube.csproj" />
+    <ProjectReference Include="..\..\source\Outsourced.DataCube.Json.NewtonSoft\Outsourced.DataCube.Json.NewtonSoft.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Outsourced.DataCube.Tests\Shared\BusinessNeutralUseCaseData.cs" Link="Shared\BusinessNeutralUseCaseData.cs" />
+    <Compile Include="..\Outsourced.DataCube.Tests\Shared\CubeJsonAssertions.cs" Link="Shared\CubeJsonAssertions.cs" />
+    <Compile Include="..\Outsourced.DataCube.Tests\Shared\SerializationFixtureFactory.cs" Link="Shared\SerializationFixtureFactory.cs" />
+    <Compile Include="..\Shared.Json\CubeJsonContractTestBase.cs" Link="Shared\CubeJsonContractTestBase.cs" />
+    <Compile Include="..\Shared.Json\CubeSerializerContractTests.cs" Link="Shared\CubeSerializerContractTests.cs" />
+    <Compile Include="..\Shared.Json\CubeGuideFoundationsJsonContractTests.cs" Link="Shared\CubeGuideFoundationsJsonContractTests.cs" />
+    <Compile Include="..\Shared.Json\CubeGuideInvestigationJsonContractTests.cs" Link="Shared\CubeGuideInvestigationJsonContractTests.cs" />
+  </ItemGroup>
+
+</Project>

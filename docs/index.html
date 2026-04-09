@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Outsourced.DataCube</title>
+  <meta name="description" content="An in-memory analytics cube for .NET that helps applications model dimensions, metrics, and fact groups for reusable business analysis." />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #131a2e;
+      --panel-2: #1a233d;
+      --text: #edf2ff;
+      --muted: #b9c4e2;
+      --accent: #8bb8ff;
+      --accent-2: #c5d8ff;
+      --border: rgba(255,255,255,0.08);
+      --max: 1120px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(180deg, #09101d 0%, #0d1426 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    a { color: var(--accent-2); }
+    .wrap { width: min(calc(100% - 32px), var(--max)); margin: 0 auto; }
+    .hero {
+      padding: 80px 0 48px;
+      border-bottom: 1px solid var(--border);
+      background: radial-gradient(circle at top left, rgba(139,184,255,0.15), transparent 35%);
+    }
+    .eyebrow {
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4.5rem);
+      line-height: 1.05;
+      margin: 14px 0 20px;
+    }
+    .lead {
+      font-size: 1.15rem;
+      max-width: 860px;
+      color: var(--muted);
+    }
+    .cta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 28px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 18px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+    }
+    .btn.primary {
+      background: linear-gradient(180deg, #7fb0ff, #5f95ee);
+      color: #081222;
+      border-color: transparent;
+    }
+    section {
+      padding: 44px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    h2 {
+      font-size: 2rem;
+      margin: 0 0 18px;
+    }
+    h3 {
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+    }
+    p, li { color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 24px;
+    }
+    .quote {
+      background: rgba(139,184,255,0.08);
+      border: 1px solid rgba(139,184,255,0.2);
+      border-radius: 18px;
+      padding: 18px 20px;
+      color: var(--text);
+    }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    pre {
+      background: #0a1120;
+      border: 1px solid var(--border);
+      padding: 18px;
+      border-radius: 16px;
+      overflow: auto;
+      color: #d8e4ff;
+    }
+    ul { padding-left: 18px; }
+    footer {
+      padding: 32px 0 64px;
+      color: var(--muted);
+    }
+    @media (max-width: 860px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="eyebrow">Outsourced.DataCube</div>
+      <h1>One analytical engine inside your application</h1>
+      <p class="lead">
+        Outsourced.DataCube is an in-memory analytics cube for .NET. It helps teams model business data once through dimensions,
+        metrics, and fact groups, then reuse that model for slicing, grouping, aggregating, and pivoting data across many use cases.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="../README.md">Read the README</a>
+        <a class="btn" href="#why">Why use it</a>
+        <a class="btn" href="#problems">Problems it solves</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="why">
+      <div class="wrap two-col">
+        <div>
+          <h2>Why use it?</h2>
+          <p>
+            Most applications do not struggle to store data. They struggle to turn the same data into many consistent analytical views.
+            Teams end up rewriting similar calculations in SQL, LINQ, services, exports, dashboards, and scripts.
+          </p>
+          <p>
+            The result is drift: revenue means one thing here, another thing there, and percentages get calculated incorrectly because the logic is spread everywhere.
+          </p>
+          <div class="quote">
+            Use the Data Cube when the same business data is analyzed from many angles and you want one reusable, testable, and consistent way to turn that data into decisions.
+          </div>
+        </div>
+        <div class="card">
+          <h3>In practical terms</h3>
+          <ul>
+            <li>Define the analytical structure once</li>
+            <li>Reuse dimensions and metrics across modules</li>
+            <li>Reduce ad hoc grouping logic</li>
+            <li>Improve trust in numbers</li>
+            <li>Ship new analyses faster</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="problems">
+      <div class="wrap">
+        <h2>What real-life problems does it solve?</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Inconsistent KPIs</h3>
+            <p>The same metric often gets implemented differently across reports and services. A cube creates one analytical model instead of many local versions.</p>
+          </div>
+          <div class="card">
+            <h3>Slow report delivery</h3>
+            <p>Once the cube exists, new analytical views often become new slices over the same model instead of new one-off pipelines.</p>
+          </div>
+          <div class="card">
+            <h3>Hard root-cause analysis</h3>
+            <p>Business questions rarely stop at totals. People want to move from overall numbers to category, week, product, hour, or tag. That is what a cube is built for.</p>
+          </div>
+          <div class="card">
+            <h3>Fragile analytical code</h3>
+            <p>Ad hoc GroupBy-heavy code becomes repetitive and hard to maintain. A cube gives that logic a cleaner home.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>How to explain it to non-technical people</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>The pivot table analogy</h3>
+            <p>It is like having a reusable pivot-table engine inside the product instead of rebuilding pivot logic again and again.</p>
+          </div>
+          <div class="card">
+            <h3>The contract analogy</h3>
+            <p>It creates a shared contract for what the dimensions are, what the metrics are, and how those metrics are allowed to aggregate.</p>
+          </div>
+          <div class="card">
+            <h3>The foundation analogy</h3>
+            <p>Instead of building every report from raw bricks, you build a stable analytical foundation that many reports can stand on.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Who should use it?</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Developers</h3>
+            <p>Use it when your application needs reusable business analysis and you want to stop scattering analytical logic across the codebase.</p>
+          </div>
+          <div class="card">
+            <h3>Architects and technical leads</h3>
+            <p>Use it when you want a shared analytical model that survives beyond one report, one endpoint, or one sprint.</p>
+          </div>
+          <div class="card">
+            <h3>Product and solution people</h3>
+            <p>Use it when the business keeps asking the same data to be viewed in different ways and you need a model, not another custom export.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap two-col">
+        <div>
+          <h2>Typical use cases</h2>
+          <ul>
+            <li>sales by product, week, hour, or channel</li>
+            <li>pricing and margin analysis</li>
+            <li>inventory and stock-risk analysis</li>
+            <li>category and taxonomy slicing</li>
+            <li>trend detection and time-window comparisons</li>
+            <li>embedded operational dashboards in business applications</li>
+          </ul>
+        </div>
+        <div>
+          <h2>What it is not</h2>
+          <p>
+            It is not a hosted BI platform, not a server-side query language, and not an enterprise OLAP server. It is an in-memory analytical engine for .NET applications.
+          </p>
+          <p>
+            That is deliberate. It stays close to the application, easy to test, and easy to evolve.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Quick example</h2>
+        <pre><code>var cube = new AnalyticsCube
+{
+  Key = "sales",
+  Label = "Sales Analysis"
+};
+
+var product = cube.AddTypedDimension&lt;string&gt;("product", "Product");
+var week = cube.AddTypedDimension&lt;string&gt;("week", "Week");
+var revenue = cube.AddCurrencyMetric("revenue", "BRL", "Revenue");
+
+cube.CreateFactGroup()
+  .WithDimensionValue(product, "Cola")
+  .WithDimensionValue(week, "2026-W14")
+  .WithMetricValue(revenue, 1250m)
+  .Build();</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>
+        Outsourced.DataCube helps turn recurring business questions into a reusable analytical model.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>

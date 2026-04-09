@@ -1,0 +1,1551 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+Converters/DimensionJsonConverterFactory.cs
+Converters/DimensionValueJsonConverterFactory.cs
+Converters/FactGroupJsonConverter.cs
+Converters/MetricCollectionJsonConverterFactory.cs
+Converters/MetricJsonConverterFactory.cs
+Converters/ObjectValueJsonConverter.cs
+CubeSerializer.cs
+Internal/SerializationCaches.cs
+Outsourced.DataCube.Json.SystemText.csproj
+SerializerSettings/CubeSerializerSettings.cs
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="Converters/DimensionJsonConverterFactory.cs">
+namespace Outsourced.DataCube.Json.SystemText.Converters;
+
+using DataCube;
+using Internal;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+
+/// <summary>
+/// Creates converters for <see cref="Dimension"/> and <see cref="CompositeDimension"/> model types.
+/// </summary>
+public sealed class DimensionJsonConverterFactory : JsonConverterFactory
+{
+  /// <inheritdoc />
+  public override bool CanConvert(Type typeToConvert)
+  {
+    return typeof(Dimension).IsAssignableFrom(typeToConvert);
+  }
+
+  /// <inheritdoc />
+  public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+  {
+    if (typeToConvert == typeof(Dimension))
+      return new DimensionJsonConverter();
+
+    if (typeToConvert == typeof(CompositeDimension))
+      return new CompositeDimensionJsonConverter();
+
+    if (typeToConvert.IsGenericType && typeToConvert.GetGenericTypeDefinition() == typeof(Dimension<>))
+    {
+      var valueType = typeToConvert.GetGenericArguments()[0];
+      var converterType = typeof(TypedDimensionJsonConverter<>).MakeGenericType(valueType);
+      return (JsonConverter)Activator.CreateInstance(converterType)!;
+    }
+
+    if (typeToConvert.IsGenericType && typeToConvert.GetGenericTypeDefinition() == typeof(CompositeDimension<>))
+    {
+      var entityType = typeToConvert.GetGenericArguments()[0];
+      var converterType = typeof(TypedCompositeDimensionJsonConverter<>).MakeGenericType(entityType);
+      return (JsonConverter)Activator.CreateInstance(converterType)!;
+    }
+
+    throw new NotSupportedException($"Unsupported dimension type {typeToConvert.FullName}.");
+  }
+
+  private sealed class DimensionJsonConverter : JsonConverter<Dimension>
+  {
+    public override Dimension Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      if (root.TryGetProperty("$type", out var typeElement))
+      {
+        var runtimeType = TypeResolutionCache.Resolve(typeElement.GetString());
+        if (runtimeType != null && runtimeType != typeof(Dimension))
+          return (Dimension)JsonSerializer.Deserialize(root.GetRawText(), runtimeType, options)!;
+      }
+
+      var key = GetRequiredString(root, nameof(Dimension.Key));
+      var label = GetOptionalString(root, nameof(Dimension.Label));
+      var dimension = new Dimension(key, label ?? key);
+
+      AddValues(root, dimension, options);
+      AddHierarchies(root, dimension, options);
+      return dimension;
+    }
+
+    public override void Write(Utf8JsonWriter writer, Dimension value, JsonSerializerOptions options)
+    {
+      if (value.GetType() != typeof(Dimension))
+      {
+        JsonSerializer.Serialize(writer, value, value.GetType(), options);
+        return;
+      }
+
+      WriteDimensionStart(writer, value);
+      WriteValues(writer, value, options);
+      WriteHierarchies(writer, value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class TypedDimensionJsonConverter<T> : JsonConverter<Dimension<T>>
+  {
+    public override Dimension<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      var key = GetRequiredString(root, nameof(Dimension.Key));
+      var label = GetOptionalString(root, nameof(Dimension.Label));
+      var dimension = new Dimension<T>(key, label ?? key);
+
+      if (root.TryGetProperty(nameof(Dimension.Values), out var valuesElement) && valuesElement.ValueKind == JsonValueKind.Array)
+      {
+        foreach (var item in valuesElement.EnumerateArray())
+        {
+          try
+          {
+            var typedValue = item.Deserialize<DimensionValue<T>>(options);
+            dimension.CreateValue(typedValue.Key, typedValue.Label, typedValue.Value);
+          }
+          catch
+          {
+          }
+        }
+      }
+
+      AddHierarchies(root, dimension, options);
+      return dimension;
+    }
+
+    public override void Write(Utf8JsonWriter writer, Dimension<T> value, JsonSerializerOptions options)
+    {
+      WriteDimensionStart(writer, value);
+      WriteValues(writer, value, options);
+      WriteHierarchies(writer, value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class CompositeDimensionJsonConverter : JsonConverter<CompositeDimension>
+  {
+    public override CompositeDimension Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      var key = GetRequiredString(root, nameof(Dimension.Key));
+      var label = GetOptionalString(root, nameof(Dimension.Label));
+      var keyCriteria = root.GetProperty(nameof(CompositeDimension.KeyCriteria)).Deserialize<List<string>>(options);
+
+      if (keyCriteria == null || keyCriteria.Count == 0)
+        throw new JsonException("CompositeDimension must have at least one key criterion.");
+
+      var dimension = new CompositeDimension(keyCriteria.ToArray())
+      {
+        Key = key,
+        Label = label ?? key
+      };
+
+      AddValues(root, dimension, options);
+      AddHierarchies(root, dimension, options);
+      return dimension;
+    }
+
+    public override void Write(Utf8JsonWriter writer, CompositeDimension value, JsonSerializerOptions options)
+    {
+      WriteDimensionStart(writer, value);
+      writer.WritePropertyName(nameof(CompositeDimension.KeyCriteria));
+      JsonSerializer.Serialize(writer, value.KeyCriteria, options);
+      WriteValues(writer, value, options);
+      WriteHierarchies(writer, value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class TypedCompositeDimensionJsonConverter<TEntity> : JsonConverter<CompositeDimension<TEntity>>
+    where TEntity : new()
+  {
+    public override CompositeDimension<TEntity> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      var key = GetRequiredString(root, nameof(Dimension.Key));
+      var label = GetOptionalString(root, nameof(Dimension.Label));
+      var keyCriteria = root.GetProperty(nameof(CompositeDimension.KeyCriteria)).Deserialize<List<string>>(options);
+
+      if (keyCriteria == null || keyCriteria.Count == 0)
+        throw new JsonException("CompositeDimension must have at least one key criterion.");
+
+      var dimension = new SerializationCompositeDimension<TEntity>(keyCriteria.ToArray())
+      {
+        Key = key,
+        Label = label ?? key
+      };
+
+      AddValues(root, dimension, options);
+      AddHierarchies(root, dimension, options);
+      return dimension;
+    }
+
+    public override void Write(Utf8JsonWriter writer, CompositeDimension<TEntity> value, JsonSerializerOptions options)
+    {
+      WriteDimensionStart(writer, value);
+      writer.WritePropertyName(nameof(CompositeDimension.KeyCriteria));
+      JsonSerializer.Serialize(writer, value.KeyCriteria, options);
+      WriteValues(writer, value, options);
+      WriteHierarchies(writer, value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class SerializationCompositeDimension<TEntity> : CompositeDimension<TEntity>
+    where TEntity : new()
+  {
+    public SerializationCompositeDimension(params string[] criteria)
+      : base(criteria)
+    {
+    }
+
+    public override CompositeDimensionValue<TEntity> CreateCompositeValue(TEntity entity)
+    {
+      throw new NotSupportedException("This dimension was created from serialized data and cannot create new values.");
+    }
+  }
+
+  private static void AddValues(JsonElement root, Dimension dimension, JsonSerializerOptions options)
+  {
+    if (!root.TryGetProperty(nameof(Dimension.Values), out var valuesElement) || valuesElement.ValueKind != JsonValueKind.Array)
+      return;
+
+    foreach (var item in valuesElement.EnumerateArray())
+    {
+      try
+      {
+        var value = item.Deserialize<DimensionValue>(options);
+        dimension.AddValue(value);
+      }
+      catch
+      {
+      }
+    }
+  }
+
+  private static void AddHierarchies(JsonElement root, Dimension dimension, JsonSerializerOptions options)
+  {
+    if (!root.TryGetProperty(nameof(Dimension.Hierarchies), out var hierarchiesElement) || hierarchiesElement.ValueKind != JsonValueKind.Array)
+      return;
+
+    var hierarchies = hierarchiesElement.Deserialize<List<Hierarchy>>(options);
+    if (hierarchies == null)
+      return;
+
+    foreach (var hierarchy in hierarchies)
+      dimension.AddHierarchy(hierarchy);
+  }
+
+  private static void WriteDimensionStart(Utf8JsonWriter writer, Dimension dimension)
+  {
+    writer.WriteStartObject();
+    writer.WriteString("$type", TypeResolutionCache.GetTypeName(dimension.GetType()));
+    writer.WriteString(nameof(Dimension.Key), dimension.Key);
+
+    if (!string.IsNullOrEmpty(dimension.Label))
+      writer.WriteString(nameof(Dimension.Label), dimension.Label);
+  }
+
+  private static void WriteValues(Utf8JsonWriter writer, Dimension dimension, JsonSerializerOptions options)
+  {
+    if (dimension.Values.Count == 0)
+      return;
+
+    writer.WritePropertyName(nameof(Dimension.Values));
+    JsonSerializer.Serialize(writer, dimension.Values, options);
+  }
+
+  private static void WriteHierarchies(Utf8JsonWriter writer, Dimension dimension, JsonSerializerOptions options)
+  {
+    if (dimension.Hierarchies.Count == 0)
+      return;
+
+    writer.WritePropertyName(nameof(Dimension.Hierarchies));
+    JsonSerializer.Serialize(writer, dimension.Hierarchies, options);
+  }
+
+  private static string GetRequiredString(JsonElement root, string propertyName)
+  {
+    if (!root.TryGetProperty(propertyName, out var property) || string.IsNullOrEmpty(property.GetString()))
+      throw new JsonException($"Dimension must have a {propertyName}.");
+
+    return property.GetString()!;
+  }
+
+  private static string GetOptionalString(JsonElement root, string propertyName)
+  {
+    return root.TryGetProperty(propertyName, out var property) ? property.GetString() : null;
+  }
+}
+</file>
+
+<file path="Converters/DimensionValueJsonConverterFactory.cs">
+namespace Outsourced.DataCube.Json.SystemText.Converters;
+
+using DataCube;
+using Internal;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+
+/// <summary>
+/// Creates converters for <see cref="DimensionValue"/> and <see cref="CompositeDimensionValue"/> model types.
+/// </summary>
+public sealed class DimensionValueJsonConverterFactory : JsonConverterFactory
+{
+  /// <inheritdoc />
+  public override bool CanConvert(Type typeToConvert)
+  {
+    return typeof(DimensionValue).IsAssignableFrom(typeToConvert);
+  }
+
+  /// <inheritdoc />
+  public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+  {
+    if (typeToConvert == typeof(DimensionValue))
+      return new DimensionValueJsonConverter();
+
+    if (typeToConvert == typeof(CompositeDimensionValue))
+      return new CompositeDimensionValueJsonConverter();
+
+    if (typeToConvert.IsGenericType && typeToConvert.GetGenericTypeDefinition() == typeof(DimensionValue<>))
+    {
+      var valueType = typeToConvert.GetGenericArguments()[0];
+      var converterType = typeof(TypedDimensionValueJsonConverter<>).MakeGenericType(valueType);
+      return (JsonConverter)Activator.CreateInstance(converterType)!;
+    }
+
+    if (typeToConvert.IsGenericType && typeToConvert.GetGenericTypeDefinition() == typeof(CompositeDimensionValue<>))
+    {
+      var entityType = typeToConvert.GetGenericArguments()[0];
+      var converterType = typeof(TypedCompositeDimensionValueJsonConverter<>).MakeGenericType(entityType);
+      return (JsonConverter)Activator.CreateInstance(converterType)!;
+    }
+
+    throw new NotSupportedException($"Unsupported dimension value type {typeToConvert.FullName}.");
+  }
+
+  private sealed class DimensionValueJsonConverter : JsonConverter<DimensionValue>
+  {
+    public override DimensionValue Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      if (root.TryGetProperty("$type", out var typeElement))
+      {
+        var runtimeType = TypeResolutionCache.Resolve(typeElement.GetString());
+        if (runtimeType != null && runtimeType != typeof(DimensionValue))
+          return (DimensionValue)JsonSerializer.Deserialize(root.GetRawText(), runtimeType, options)!;
+      }
+
+      var key = GetRequiredString(root, nameof(DimensionValue.Key));
+      var label = GetOptionalString(root, nameof(DimensionValue.Label));
+      var value = root.TryGetProperty(nameof(DimensionValue.Value), out var valueElement)
+        ? JsonSerializer.Deserialize<object>(valueElement.GetRawText(), options)
+        : null;
+
+      return new DimensionValue(key, label, value);
+    }
+
+    public override void Write(Utf8JsonWriter writer, DimensionValue value, JsonSerializerOptions options)
+    {
+      if (value.GetType() != typeof(DimensionValue))
+      {
+        JsonSerializer.Serialize(writer, value, value.GetType(), options);
+        return;
+      }
+
+      writer.WriteStartObject();
+      writer.WriteString("$type", TypeResolutionCache.GetTypeName(value.GetType()));
+      writer.WriteString(nameof(DimensionValue.Key), value.Key);
+
+      if (!string.IsNullOrEmpty(value.Label))
+        writer.WriteString(nameof(DimensionValue.Label), value.Label);
+
+      writer.WritePropertyName(nameof(DimensionValue.Value));
+      ObjectValueJsonConverter.WriteValue(writer, value.Value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class TypedDimensionValueJsonConverter<T> : JsonConverter<DimensionValue<T>>
+  {
+    public override DimensionValue<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      var key = GetRequiredString(root, nameof(DimensionValue.Key));
+      var label = GetOptionalString(root, nameof(DimensionValue.Label));
+      var value = root.GetProperty(nameof(DimensionValue.Value)).Deserialize<T>(options);
+
+      return new DimensionValue<T>(key, label, value);
+    }
+
+    public override void Write(Utf8JsonWriter writer, DimensionValue<T> value, JsonSerializerOptions options)
+    {
+      writer.WriteStartObject();
+      writer.WriteString("$type", TypeResolutionCache.GetTypeName(value.GetType()));
+      writer.WriteString(nameof(DimensionValue.Key), value.Key);
+
+      if (!string.IsNullOrEmpty(value.Label))
+        writer.WriteString(nameof(DimensionValue.Label), value.Label);
+
+      writer.WritePropertyName(nameof(DimensionValue.Value));
+      JsonSerializer.Serialize(writer, value.Value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class CompositeDimensionValueJsonConverter : JsonConverter<CompositeDimensionValue>
+  {
+    public override CompositeDimensionValue Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      var key = GetRequiredString(root, nameof(DimensionValue.Key));
+      var label = GetOptionalString(root, nameof(DimensionValue.Label));
+      var values = root.GetProperty(nameof(DimensionValue.Value)).Deserialize<Dictionary<string, object>>(options)
+        ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+      return new CompositeDimensionValue(key, label, values);
+    }
+
+    public override void Write(Utf8JsonWriter writer, CompositeDimensionValue value, JsonSerializerOptions options)
+    {
+      writer.WriteStartObject();
+      writer.WriteString("$type", TypeResolutionCache.GetTypeName(value.GetType()));
+      writer.WriteString(nameof(DimensionValue.Key), value.Key);
+
+      if (!string.IsNullOrEmpty(value.Label))
+        writer.WriteString(nameof(DimensionValue.Label), value.Label);
+
+      writer.WritePropertyName(nameof(DimensionValue.Value));
+      ObjectValueJsonConverter.WriteValue(writer, value.Value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private sealed class TypedCompositeDimensionValueJsonConverter<TEntity> : JsonConverter<CompositeDimensionValue<TEntity>>
+    where TEntity : new()
+  {
+    public override CompositeDimensionValue<TEntity> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      var root = document.RootElement;
+
+      var key = GetRequiredString(root, nameof(DimensionValue.Key));
+      var label = GetOptionalString(root, nameof(DimensionValue.Label));
+      var values = root.GetProperty(nameof(DimensionValue.Value)).Deserialize<Dictionary<string, object>>(options)
+        ?? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+      return new CompositeDimensionValue<TEntity>(key, label, values, default);
+    }
+
+    public override void Write(Utf8JsonWriter writer, CompositeDimensionValue<TEntity> value, JsonSerializerOptions options)
+    {
+      writer.WriteStartObject();
+      writer.WriteString("$type", TypeResolutionCache.GetTypeName(value.GetType()));
+      writer.WriteString(nameof(DimensionValue.Key), value.Key);
+
+      if (!string.IsNullOrEmpty(value.Label))
+        writer.WriteString(nameof(DimensionValue.Label), value.Label);
+
+      writer.WritePropertyName(nameof(DimensionValue.Value));
+      ObjectValueJsonConverter.WriteValue(writer, value.Value, options);
+      writer.WriteEndObject();
+    }
+  }
+
+  private static string GetRequiredString(JsonElement root, string propertyName)
+  {
+    if (!root.TryGetProperty(propertyName, out var property) || string.IsNullOrEmpty(property.GetString()))
+      throw new JsonException($"DimensionValue must have a {propertyName}.");
+
+    return property.GetString()!;
+  }
+
+  private static string GetOptionalString(JsonElement root, string propertyName)
+  {
+    return root.TryGetProperty(propertyName, out var property) ? property.GetString() : null;
+  }
+}
+</file>
+
+<file path="Converters/FactGroupJsonConverter.cs">
+namespace Outsourced.DataCube.Json.SystemText.Converters;
+
+using DataCube;
+using Internal;
+using Metrics;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+using System;
+
+/// <summary>
+/// Serializes <see cref="FactGroup"/> instances using the compact DataCube JSON representation.
+/// </summary>
+public sealed class FactGroupJsonConverter : JsonConverter<FactGroup>
+{
+  /// <inheritdoc />
+  public override FactGroup Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+  {
+    if (reader.TokenType == JsonTokenType.Null)
+      return null;
+
+    if (reader.TokenType != JsonTokenType.StartObject)
+      throw new JsonException("Expected StartObject for FactGroup.");
+
+    var factGroup = new FactGroup();
+
+    while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+    {
+      if (reader.TokenType == JsonTokenType.PropertyName)
+      {
+        var propertyName = reader.GetString();
+        if (propertyName != null) propertyName = string.Intern(propertyName);
+
+        // Map "D" and legacy names
+        if (string.Equals(propertyName, "D", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(propertyName, nameof(FactGroup.DimensionValues), StringComparison.OrdinalIgnoreCase))
+        {
+          reader.Read(); // move to StartObject
+          if (reader.TokenType == JsonTokenType.StartObject)
+          {
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+              if (reader.TokenType == JsonTokenType.PropertyName)
+              {
+                var dimKey = reader.GetString();
+                if (dimKey != null) dimKey = string.Intern(dimKey);
+
+                reader.Read(); // move to value
+                var dimValue = JsonSerializer.Deserialize<DimensionValue>(ref reader, options);
+                factGroup.DimensionValues[dimKey] = dimValue;
+              }
+            }
+          }
+          else
+          {
+            reader.Skip();
+          }
+        }
+        // Map "M" and legacy names
+        else if (string.Equals(propertyName, "M", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(propertyName, nameof(FactGroup.MetricCollections), StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(propertyName, "MetricValues", StringComparison.OrdinalIgnoreCase))
+        {
+          reader.Read(); // move to StartObject
+          if (reader.TokenType == JsonTokenType.StartObject)
+          {
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+              if (reader.TokenType == JsonTokenType.PropertyName)
+              {
+                var metricTypeStr = reader.GetString();
+                reader.Read(); // move to StartObject for metric collections
+
+                if (Enum.TryParse<MetricType>(metricTypeStr, true, out var metricType))
+                {
+                  var accessor = MetricCollectionAccessorCache.Get(metricType);
+                  var collection = accessor.CreateCollection();
+
+                  if (reader.TokenType == JsonTokenType.StartObject)
+                  {
+                    while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+                    {
+                      if (reader.TokenType == JsonTokenType.PropertyName)
+                      {
+                        var metricKey = reader.GetString();
+                        if (metricKey != null) metricKey = string.Intern(metricKey);
+
+                        reader.Read(); // move to value
+                        var metricValue = JsonSerializer.Deserialize(ref reader, accessor.ValueType, options);
+                        accessor.SetValue(collection, metricKey, metricValue);
+                      }
+                    }
+                  }
+                  else
+                  {
+                    reader.Skip();
+                  }
+
+                  factGroup.MetricCollections[metricType] = collection;
+                }
+                else
+                {
+                  reader.Skip();
+                }
+              }
+            }
+          }
+          else
+          {
+            reader.Skip();
+          }
+        }
+        else
+        {
+          reader.Read(); // move to value
+          reader.Skip(); // skip unknown property
+        }
+      }
+    }
+
+    return factGroup;
+  }
+
+  /// <inheritdoc />
+  public override void Write(Utf8JsonWriter writer, FactGroup value, JsonSerializerOptions options)
+  {
+    writer.WriteStartObject();
+
+    writer.WritePropertyName("D");
+    writer.WriteStartObject();
+    foreach (var entry in value.DimensionValues)
+    {
+      writer.WritePropertyName(entry.Key);
+      JsonSerializer.Serialize(writer, entry.Value, options);
+    }
+    writer.WriteEndObject();
+
+    writer.WritePropertyName("M");
+    writer.WriteStartObject();
+    foreach (var entry in value.MetricCollections)
+    {
+      writer.WritePropertyName(entry.Key.ToString());
+      JsonSerializer.Serialize(writer, entry.Value, entry.Value.GetType(), options);
+    }
+    writer.WriteEndObject();
+
+    writer.WriteEndObject();
+  }
+}
+</file>
+
+<file path="Converters/MetricCollectionJsonConverterFactory.cs">
+namespace Outsourced.DataCube.Json.SystemText.Converters;
+
+using Metrics;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+
+/// <summary>
+/// Creates converters for <see cref="IMetricCollection"/> and <see cref="MetricCollection{T}"/> types.
+/// </summary>
+public sealed class MetricCollectionJsonConverterFactory : JsonConverterFactory
+{
+  /// <inheritdoc />
+  public override bool CanConvert(Type typeToConvert)
+  {
+    return typeof(IMetricCollection).IsAssignableFrom(typeToConvert);
+  }
+
+  /// <inheritdoc />
+  public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+  {
+    if (typeToConvert.IsGenericType && typeToConvert.GetGenericTypeDefinition() == typeof(MetricCollection<>))
+    {
+      var valueType = typeToConvert.GetGenericArguments()[0];
+      var converterType = typeof(MetricCollectionJsonConverter<>).MakeGenericType(valueType);
+      return (JsonConverter)Activator.CreateInstance(converterType)!;
+    }
+
+    return new MetricCollectionInterfaceJsonConverter();
+  }
+
+  private sealed class MetricCollectionInterfaceJsonConverter : JsonConverter<IMetricCollection>
+  {
+    public override IMetricCollection Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      throw new JsonException("IMetricCollection values are deserialized through FactGroupConverter with metric type context.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, IMetricCollection value, JsonSerializerOptions options)
+    {
+      JsonSerializer.Serialize(writer, value, value.GetType(), options);
+    }
+  }
+
+  private sealed class MetricCollectionJsonConverter<T> : JsonConverter<MetricCollection<T>>
+    where T : struct
+  {
+    public override MetricCollection<T> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      if (reader.TokenType != JsonTokenType.StartObject)
+        throw new JsonException("Expected a metric collection JSON object.");
+
+      var collection = new MetricCollection<T>();
+
+      while (reader.Read())
+      {
+        if (reader.TokenType == JsonTokenType.EndObject)
+          return collection;
+
+        if (reader.TokenType != JsonTokenType.PropertyName)
+          throw new JsonException("Expected a metric key while reading a metric collection.");
+
+        var key = reader.GetString() ?? string.Empty;
+        if (!reader.Read())
+          throw new JsonException("Unexpected end of JSON while reading a metric collection value.");
+
+        var value = JsonSerializer.Deserialize<T>(ref reader, options);
+        collection.SetValue(key, value);
+      }
+
+      throw new JsonException("Unexpected end of JSON while reading a metric collection.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, MetricCollection<T> value, JsonSerializerOptions options)
+    {
+      writer.WriteStartObject();
+
+      foreach (var key in value.GetMetricKeys())
+      {
+        writer.WritePropertyName(key);
+        JsonSerializer.Serialize(writer, value.GetValue(key), options);
+      }
+
+      writer.WriteEndObject();
+    }
+  }
+}
+</file>
+
+<file path="Converters/MetricJsonConverterFactory.cs">
+namespace Outsourced.DataCube.Json.SystemText.Converters;
+
+using DataCube;
+using Internal;
+using Metrics;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+
+/// <summary>
+/// Creates converters for <see cref="Metric"/> model types.
+/// </summary>
+public sealed class MetricJsonConverterFactory : JsonConverterFactory
+{
+  /// <inheritdoc />
+  public override bool CanConvert(Type typeToConvert)
+  {
+    return typeof(Metric).IsAssignableFrom(typeToConvert);
+  }
+
+  /// <inheritdoc />
+  public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
+  {
+    var converterType = typeof(MetricJsonConverter<>).MakeGenericType(typeToConvert);
+    return (JsonConverter)Activator.CreateInstance(converterType)!;
+  }
+
+  private sealed class MetricJsonConverter<TMetric> : JsonConverter<TMetric>
+    where TMetric : Metric
+  {
+    public override TMetric Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+      using var document = JsonDocument.ParseValue(ref reader);
+      return (TMetric)ReadMetric(document.RootElement, typeToConvert);
+    }
+
+    public override void Write(Utf8JsonWriter writer, TMetric value, JsonSerializerOptions options)
+    {
+      WriteMetric(writer, value);
+    }
+  }
+
+  private static Metric ReadMetric(JsonElement root, Type declaredType)
+  {
+    var runtimeType = declaredType;
+    if (root.TryGetProperty("$type", out var typeElement))
+      runtimeType = TypeResolutionCache.Resolve(typeElement.GetString()) ?? declaredType;
+
+    var key = GetRequiredString(root, nameof(Metric.Key));
+    var label = GetOptionalString(root, nameof(Metric.Label));
+    var format = GetOptionalString(root, nameof(Metric.Format));
+    var unit = GetOptionalString(root, nameof(Metric.Unit));
+    var businessKeyDimensionKey = GetOptionalString(root, nameof(DistinctCountMetric.BusinessKeyDimensionKey));
+
+    var metricType = MetricType.Unknown;
+    if (root.TryGetProperty(nameof(Metric.MetricType), out var metricTypeElement) &&
+        Enum.TryParse(metricTypeElement.GetString(), ignoreCase: true, out MetricType parsedMetricType))
+    {
+      metricType = parsedMetricType;
+    }
+
+    var aggregationType = AggregationType.Count;
+    if (root.TryGetProperty(nameof(Metric.AggregationType), out var aggregationTypeElement) &&
+        Enum.TryParse(aggregationTypeElement.GetString(), ignoreCase: true, out AggregationType parsedAggregationType))
+    {
+      aggregationType = parsedAggregationType;
+    }
+
+    var result = MetricFactory.CreateMetric(runtimeType, key, label, metricType, aggregationType, format, unit, businessKeyDimensionKey);
+    result.Semantics = ReadSemantics(root, aggregationType);
+    return result;
+  }
+
+  private static void WriteMetric(Utf8JsonWriter writer, Metric metric)
+  {
+    writer.WriteStartObject();
+    writer.WriteString("$type", TypeResolutionCache.GetTypeName(metric.GetType()));
+    writer.WriteString(nameof(Metric.Key), metric.Key);
+
+    if (!string.IsNullOrEmpty(metric.Label))
+      writer.WriteString(nameof(Metric.Label), metric.Label);
+
+    writer.WriteString(nameof(Metric.MetricType), metric.MetricType.ToString());
+    writer.WriteString(nameof(Metric.AggregationType), metric.AggregationType.ToString());
+
+    if (!string.IsNullOrEmpty(metric.Format))
+      writer.WriteString(nameof(Metric.Format), metric.Format);
+
+    if (!string.IsNullOrEmpty(metric.Unit))
+      writer.WriteString(nameof(Metric.Unit), metric.Unit);
+
+    if (metric is DistinctCountMetric distinctCountMetric)
+      writer.WriteString(nameof(DistinctCountMetric.BusinessKeyDimensionKey), distinctCountMetric.BusinessKeyDimensionKey);
+
+    WriteSemantics(writer, metric.Semantics ?? MetricSemantics.CreateDefault(metric.AggregationType));
+
+    writer.WriteEndObject();
+  }
+
+  private static MetricSemantics ReadSemantics(JsonElement root, AggregationType aggregationType)
+  {
+    var semantics = MetricSemantics.CreateDefault(aggregationType);
+
+    if (!root.TryGetProperty(nameof(Metric.Semantics), out var semanticsElement) || semanticsElement.ValueKind == JsonValueKind.Null)
+      return semantics;
+
+    if (semanticsElement.TryGetProperty(nameof(MetricSemantics.Additivity), out var additivityElement) &&
+        Enum.TryParse(additivityElement.GetString(), ignoreCase: true, out MetricAdditivity additivity))
+    {
+      semantics.Additivity = additivity;
+    }
+
+    if (semanticsElement.TryGetProperty(nameof(MetricSemantics.SemiAdditive), out var semiAdditiveElement) &&
+        semiAdditiveElement.ValueKind != JsonValueKind.Null)
+    {
+      var policy = new SemiAdditiveMetricPolicy();
+
+      if (semiAdditiveElement.TryGetProperty(nameof(SemiAdditiveMetricPolicy.TimeDimensionKey), out var timeDimensionKeyElement))
+        policy.TimeDimensionKey = timeDimensionKeyElement.GetString();
+
+      if (semiAdditiveElement.TryGetProperty(nameof(SemiAdditiveMetricPolicy.Aggregation), out var semiAdditiveAggregationElement) &&
+          Enum.TryParse(semiAdditiveAggregationElement.GetString(), ignoreCase: true, out SemiAdditiveAggregationType semiAdditiveAggregation))
+      {
+        policy.Aggregation = semiAdditiveAggregation;
+      }
+
+      semantics.SemiAdditive = policy;
+    }
+    else
+    {
+      semantics.SemiAdditive = null;
+    }
+
+    return semantics;
+  }
+
+  private static void WriteSemantics(Utf8JsonWriter writer, MetricSemantics semantics)
+  {
+    writer.WritePropertyName(nameof(Metric.Semantics));
+    writer.WriteStartObject();
+    writer.WriteString(nameof(MetricSemantics.Additivity), semantics.Additivity.ToString());
+
+    if (semantics.SemiAdditive != null)
+    {
+      writer.WritePropertyName(nameof(MetricSemantics.SemiAdditive));
+      writer.WriteStartObject();
+      writer.WriteString(nameof(SemiAdditiveMetricPolicy.TimeDimensionKey), semantics.SemiAdditive.TimeDimensionKey);
+      writer.WriteString(nameof(SemiAdditiveMetricPolicy.Aggregation), semantics.SemiAdditive.Aggregation.ToString());
+      writer.WriteEndObject();
+    }
+
+    writer.WriteEndObject();
+  }
+
+  private static string GetRequiredString(JsonElement root, string propertyName)
+  {
+    if (!root.TryGetProperty(propertyName, out var property) || string.IsNullOrEmpty(property.GetString()))
+      throw new JsonException($"Metric must have a {propertyName}.");
+
+    return property.GetString()!;
+  }
+
+  private static string GetOptionalString(JsonElement root, string propertyName)
+  {
+    return root.TryGetProperty(propertyName, out var property) ? property.GetString() : null;
+  }
+}
+</file>
+
+<file path="Converters/ObjectValueJsonConverter.cs">
+namespace Outsourced.DataCube.Json.SystemText.Converters;
+
+using System.Buffers;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+
+/// <summary>
+/// Reads and writes loosely typed object values used inside composite dimension payloads.
+/// </summary>
+public sealed class ObjectValueJsonConverter : JsonConverter<object>
+{
+  /// <inheritdoc />
+  public override object Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+  {
+    return ReadInferredValue(ref reader, options);
+  }
+
+  /// <inheritdoc />
+  public override void Write(Utf8JsonWriter writer, object value, JsonSerializerOptions options)
+  {
+    WriteValue(writer, value, options);
+  }
+
+  internal static object ReadInferredValue(ref Utf8JsonReader reader, JsonSerializerOptions options)
+  {
+    switch (reader.TokenType)
+    {
+      case JsonTokenType.StartObject:
+        return ReadObject(ref reader, options);
+      case JsonTokenType.StartArray:
+        return ReadArray(ref reader, options);
+      case JsonTokenType.String:
+        return reader.GetString();
+      case JsonTokenType.Number:
+        return ReadNumber(ref reader);
+      case JsonTokenType.True:
+        return true;
+      case JsonTokenType.False:
+        return false;
+      case JsonTokenType.Null:
+        return null;
+      default:
+        throw new JsonException($"Unsupported token {reader.TokenType} for inferred object deserialization.");
+    }
+  }
+
+  internal static Dictionary<string, object> ReadObject(ref Utf8JsonReader reader, JsonSerializerOptions options)
+  {
+    var values = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+    while (reader.Read())
+    {
+      if (reader.TokenType == JsonTokenType.EndObject)
+        return values;
+
+      if (reader.TokenType != JsonTokenType.PropertyName)
+        throw new JsonException("Expected a property name while reading an inferred object.");
+
+      var propertyName = reader.GetString() ?? string.Empty;
+      if (!reader.Read())
+        throw new JsonException("Unexpected end of JSON while reading an inferred object value.");
+
+      values[propertyName] = ReadInferredValue(ref reader, options);
+    }
+
+    throw new JsonException("Unexpected end of JSON while reading an inferred object.");
+  }
+
+  internal static List<object> ReadArray(ref Utf8JsonReader reader, JsonSerializerOptions options)
+  {
+    var values = new List<object>();
+
+    while (reader.Read())
+    {
+      if (reader.TokenType == JsonTokenType.EndArray)
+        return values;
+
+      values.Add(ReadInferredValue(ref reader, options));
+    }
+
+    throw new JsonException("Unexpected end of JSON while reading an inferred array.");
+  }
+
+  internal static void WriteValue(Utf8JsonWriter writer, object value, JsonSerializerOptions options)
+  {
+    switch (value)
+    {
+      case null:
+        writer.WriteNullValue();
+        return;
+      case JsonElement element:
+        element.WriteTo(writer);
+        return;
+      case string stringValue:
+        writer.WriteStringValue(stringValue);
+        return;
+      case bool boolValue:
+        writer.WriteBooleanValue(boolValue);
+        return;
+      case byte byteValue:
+        writer.WriteNumberValue(byteValue);
+        return;
+      case sbyte sbyteValue:
+        writer.WriteNumberValue(sbyteValue);
+        return;
+      case short shortValue:
+        writer.WriteNumberValue(shortValue);
+        return;
+      case ushort ushortValue:
+        writer.WriteNumberValue(ushortValue);
+        return;
+      case int intValue:
+        writer.WriteNumberValue(intValue);
+        return;
+      case uint uintValue:
+        writer.WriteNumberValue(uintValue);
+        return;
+      case long longValue:
+        writer.WriteNumberValue(longValue);
+        return;
+      case ulong ulongValue:
+        writer.WriteNumberValue(ulongValue);
+        return;
+      case float floatValue:
+        writer.WriteNumberValue(floatValue);
+        return;
+      case double doubleValue:
+        writer.WriteNumberValue(doubleValue);
+        return;
+      case decimal decimalValue:
+        writer.WriteNumberValue(decimalValue);
+        return;
+      case IDictionary<string, object> dictionary:
+        writer.WriteStartObject();
+        foreach (var entry in dictionary)
+        {
+          writer.WritePropertyName(entry.Key);
+          WriteValue(writer, entry.Value, options);
+        }
+        writer.WriteEndObject();
+        return;
+      case IEnumerable<object> sequence:
+        writer.WriteStartArray();
+        foreach (var item in sequence)
+        {
+          WriteValue(writer, item, options);
+        }
+        writer.WriteEndArray();
+        return;
+      default:
+        JsonSerializer.Serialize(writer, value, value.GetType(), options);
+        return;
+    }
+  }
+
+  private static object ReadNumber(ref Utf8JsonReader reader)
+  {
+    ReadOnlySpan<byte> span = reader.HasValueSequence
+      ? reader.ValueSequence.ToArray()
+      : reader.ValueSpan;
+
+    var looksFloatingPoint = span.Contains((byte)'.') || span.Contains((byte)'e') || span.Contains((byte)'E');
+
+    if (!looksFloatingPoint)
+    {
+      if (reader.TryGetInt32(out var intValue))
+        return intValue;
+
+      if (reader.TryGetInt64(out var longValue))
+        return longValue;
+    }
+
+    if (reader.TryGetDecimal(out var decimalValue))
+      return decimalValue;
+
+    if (reader.TryGetDouble(out var doubleValue))
+      return doubleValue;
+
+    throw new JsonException("Unable to infer a CLR numeric type from the JSON number token.");
+  }
+}
+</file>
+
+<file path="CubeSerializer.cs">
+#nullable enable
+
+namespace Outsourced.DataCube.Json.SystemText;
+
+using Microsoft.IO;
+using DataCube;
+using global::System.Text.Json;
+
+/// <summary>
+/// Serializes and deserializes <see cref="AnalyticsCube"/> instances using <see cref="JsonSerializer"/>.
+/// </summary>
+public static class CubeSerializer
+{
+  private static readonly RecyclableMemoryStreamManager StreamManager = new();
+  private static readonly JsonSerializerOptions Options = SerializerSettings.CubeSerializerSettings.CreateOptions();
+
+  /// <summary>
+  /// Writes a cube to a JSON stream and returns the target stream.
+  /// </summary>
+  public static Stream WriteAsJsonStream(AnalyticsCube input, Stream? stream = null)
+  {
+    ArgumentNullException.ThrowIfNull(input);
+
+    stream ??= StreamManager.GetStream();
+    if (!stream.CanWrite)
+      throw new IOException("Cannot write to stream");
+
+    if (stream.CanSeek)
+      stream.Position = 0;
+
+    Serialize(input, stream);
+    return stream;
+  }
+
+  /// <summary>
+  /// Serializes a cube to the supplied stream.
+  /// </summary>
+  public static void Serialize(AnalyticsCube cube, Stream stream)
+  {
+    ArgumentNullException.ThrowIfNull(cube);
+    ArgumentNullException.ThrowIfNull(stream);
+
+    JsonSerializer.Serialize(stream, cube, Options);
+    stream.Flush();
+  }
+
+  /// <summary>
+  /// Serializes a cube to a JSON string.
+  /// </summary>
+  public static string Serialize(AnalyticsCube cube)
+  {
+    ArgumentNullException.ThrowIfNull(cube);
+    return JsonSerializer.Serialize(cube, Options);
+  }
+
+  /// <summary>
+  /// Serializes a cube to a file.
+  /// </summary>
+  public static void SaveToFile(AnalyticsCube cube, string filePath)
+  {
+    ArgumentNullException.ThrowIfNull(cube);
+    ArgumentException.ThrowIfNullOrEmpty(filePath);
+
+    using var fileStream = File.Create(filePath);
+    Serialize(cube, fileStream);
+  }
+
+  /// <summary>
+  /// Deserializes an <see cref="AnalyticsCube"/> from a JSON string.
+  /// </summary>
+  public static AnalyticsCube Deserialize(string json)
+  {
+    ArgumentNullException.ThrowIfNull(json);
+    return JsonSerializer.Deserialize<AnalyticsCube>(json, Options)
+      ?? throw new JsonException("Unable to deserialize AnalyticsCube.");
+  }
+
+  /// <summary>
+  /// Deserializes an <see cref="AnalyticsCube"/> from a stream.
+  /// </summary>
+  public static AnalyticsCube Deserialize(Stream stream)
+  {
+    ArgumentNullException.ThrowIfNull(stream);
+    return JsonSerializer.Deserialize<AnalyticsCube>(stream, Options)
+      ?? throw new JsonException("Unable to deserialize AnalyticsCube.");
+  }
+
+  /// <summary>
+  /// Deserializes a JSON stream into the requested type.
+  /// </summary>
+  public static T ReadJsonStreamAs<T>(Stream jsonStream)
+  {
+    ArgumentNullException.ThrowIfNull(jsonStream);
+
+    if (!jsonStream.CanRead)
+      throw new IOException("Cannot read from stream");
+
+    if (jsonStream.CanSeek)
+      jsonStream.Position = 0;
+
+    var result = JsonSerializer.Deserialize<T>(jsonStream, Options);
+    if (result is null)
+      throw new JsonException($"Unable to deserialize {typeof(T).FullName ?? typeof(T).Name}.");
+
+    return result;
+  }
+
+  /// <summary>
+  /// Loads a cube from a JSON file.
+  /// </summary>
+  public static AnalyticsCube LoadFromFile(string filePath)
+  {
+    ArgumentException.ThrowIfNullOrEmpty(filePath);
+
+    using var fileStream = File.OpenRead(filePath);
+    return Deserialize(fileStream);
+  }
+}
+</file>
+
+<file path="Internal/SerializationCaches.cs">
+namespace Outsourced.DataCube.Json.SystemText.Internal;
+
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
+using System.Reflection;
+using DataCube;
+using Metrics;
+
+internal static class TypeResolutionCache
+{
+  private static readonly ConcurrentDictionary<string, Type> Cache = new(StringComparer.Ordinal);
+
+  internal static string GetTypeName(Type type)
+  {
+    return type.AssemblyQualifiedName ?? type.FullName ?? type.Name;
+  }
+
+  internal static Type Resolve(string typeName)
+  {
+    if (string.IsNullOrWhiteSpace(typeName))
+      return null;
+
+    if (Cache.TryGetValue(typeName, out var cachedType))
+      return cachedType;
+
+    var resolvedType = Type.GetType(typeName, throwOnError: false);
+    if (resolvedType == null)
+    {
+      resolvedType = AppDomain.CurrentDomain
+        .GetAssemblies()
+        .SelectMany(static assembly =>
+        {
+          try
+          {
+            return assembly.GetTypes();
+          }
+          catch (ReflectionTypeLoadException exception)
+          {
+            return exception.Types.Where(static type => type != null)!;
+          }
+        })
+        .FirstOrDefault(type =>
+          string.Equals(type.AssemblyQualifiedName, typeName, StringComparison.Ordinal) ||
+          string.Equals(type.FullName, typeName, StringComparison.Ordinal) ||
+          string.Equals(type.Name, typeName, StringComparison.Ordinal));
+    }
+
+    if (resolvedType != null)
+      Cache.TryAdd(typeName, resolvedType);
+
+    return resolvedType;
+  }
+}
+
+internal static class MetricCollectionAccessorCache
+{
+  private static readonly ConcurrentDictionary<MetricType, Accessor> Cache = new();
+
+  internal static Accessor Get(MetricType metricType)
+  {
+    return Cache.GetOrAdd(metricType, CreateAccessor);
+  }
+
+  internal sealed class Accessor(
+    Type valueType,
+    Func<IMetricCollection> createCollection,
+    Action<IMetricCollection, string, object> setValue,
+    Func<IMetricCollection, string, object> getValue)
+  {
+    public Type ValueType { get; } = valueType;
+    public Func<IMetricCollection> CreateCollection { get; } = createCollection;
+    public Action<IMetricCollection, string, object> SetValue { get; } = setValue;
+    public Func<IMetricCollection, string, object> GetValue { get; } = getValue;
+  }
+
+  private static Accessor CreateAccessor(MetricType metricType)
+  {
+    var valueType = MetricTypeHelper.GetTypeFromMetricType(metricType);
+    var collectionType = typeof(MetricCollection<>).MakeGenericType(valueType);
+
+    var createCollection = Expression
+      .Lambda<Func<IMetricCollection>>(Expression.Convert(Expression.New(collectionType), typeof(IMetricCollection)))
+      .Compile();
+
+    var collectionParameter = Expression.Parameter(typeof(IMetricCollection), "collection");
+    var keyParameter = Expression.Parameter(typeof(string), "key");
+    var valueParameter = Expression.Parameter(typeof(object), "value");
+
+    var setValueMethod = collectionType.GetMethod(nameof(MetricCollection<int>.SetValue))!;
+    var setValueExpression = Expression.Call(
+      Expression.Convert(collectionParameter, collectionType),
+      setValueMethod,
+      keyParameter,
+      Expression.Convert(valueParameter, valueType));
+
+    var setValue = Expression
+      .Lambda<Action<IMetricCollection, string, object>>(setValueExpression, collectionParameter, keyParameter, valueParameter)
+      .Compile();
+
+    var getValueMethod = collectionType.GetMethod(nameof(MetricCollection<int>.GetValue))!;
+    var getValueExpression = Expression.Convert(
+      Expression.Call(Expression.Convert(collectionParameter, collectionType), getValueMethod, keyParameter),
+      typeof(object));
+
+    var getValue = Expression
+      .Lambda<Func<IMetricCollection, string, object>>(getValueExpression, collectionParameter, keyParameter)
+      .Compile();
+
+    return new Accessor(valueType, createCollection, setValue, getValue);
+  }
+}
+
+internal static class MetricFactory
+{
+  internal static Metric CreateMetric(
+    Type runtimeType,
+    string key,
+    string label,
+    MetricType metricType,
+    AggregationType aggregationType,
+    string format,
+    string unit,
+    string businessKeyDimensionKey = null)
+  {
+    Metric result = null;
+
+    if (runtimeType != null)
+    {
+      if (runtimeType == typeof(CountMetric)) result = new CountMetric(key, label);
+      else if (runtimeType == typeof(PercentageMetric)) result = new PercentageMetric(key, label);
+      else if (runtimeType == typeof(AverageMetric)) result = new AverageMetric(key, label);
+      else if (runtimeType == typeof(CurrencyMetric)) result = new CurrencyMetric(key, label, unit);
+      else if (runtimeType == typeof(UniqueMetric)) result = new UniqueMetric(key, label);
+      else if (runtimeType == typeof(DistinctCountMetric)) result = new DistinctCountMetric(key, businessKeyDimensionKey, label);
+      else if (runtimeType == typeof(DuplicateMetric)) result = new DuplicateMetric(key, label);
+      else if (runtimeType == typeof(MissingMetric)) result = new MissingMetric(key, label);
+      else if (runtimeType.IsGenericType && string.Equals(runtimeType.GetGenericTypeDefinition().Name, "CustomMetric`1", StringComparison.Ordinal))
+      {
+        result = CreateCustomMetric(runtimeType, key, label, metricType, aggregationType, format, unit);
+      }
+    }
+
+    if (result == null)
+      result = aggregationType == AggregationType.DistinctCount
+        ? new DistinctCountMetric(key, businessKeyDimensionKey, label)
+        : new Metric(key, metricType, aggregationType, label, format, unit);
+    else
+    {
+      if (!string.IsNullOrEmpty(format))
+        result.Format = format;
+
+      if (!string.IsNullOrEmpty(unit))
+        result.Unit = unit;
+    }
+
+    return result;
+  }
+
+  private static Metric CreateCustomMetric(
+    Type runtimeType,
+    string key,
+    string label,
+    MetricType metricType,
+    AggregationType aggregationType,
+    string format,
+    string unit)
+  {
+    var constructor = runtimeType.GetConstructor(
+      BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+      binder: null,
+      types:
+      [
+        typeof(string),
+        typeof(MetricType),
+        typeof(AggregationType),
+        typeof(string),
+        typeof(string),
+        typeof(string)
+      ],
+      modifiers: null);
+
+    if (constructor == null)
+      return null;
+
+    var result = (Metric)constructor.Invoke([key, metricType, aggregationType, label, format, unit]);
+    var aggregateFuncProperty = runtimeType.GetProperty("AggregateFunc", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+    if (aggregateFuncProperty != null)
+    {
+      var genericType = runtimeType.GetGenericArguments()[0];
+      var defaultAggregateFunc = GetDefaultAggregateFunc(genericType, aggregationType);
+      if (defaultAggregateFunc != null)
+        aggregateFuncProperty.SetValue(result, defaultAggregateFunc);
+    }
+
+    return result;
+  }
+
+  private static object GetDefaultAggregateFunc(Type type, AggregationType aggregationType)
+  {
+    if (type == typeof(decimal))
+    {
+      if (aggregationType is AggregationType.Currency or AggregationType.Count or AggregationType.Sum)
+        return (Func<IEnumerable<decimal>, decimal>)(values => values.Sum());
+
+      if (aggregationType == AggregationType.Average)
+        return (Func<IEnumerable<decimal>, decimal>)(values => values.Any() ? values.Average() : 0m);
+    }
+    else if (type == typeof(double))
+    {
+      if (aggregationType is AggregationType.Average or AggregationType.Percentage)
+        return (Func<IEnumerable<double>, double>)(values => values.Any() ? values.Average() : 0d);
+
+      if (aggregationType is AggregationType.Sum or AggregationType.Count)
+        return (Func<IEnumerable<double>, double>)(values => values.Sum());
+    }
+    else if (type == typeof(int))
+    {
+      return (Func<IEnumerable<int>, int>)(values => values.Sum());
+    }
+
+    return null;
+  }
+}
+</file>
+
+<file path="Outsourced.DataCube.Json.SystemText.csproj">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Outsourced.DataCube.Json.SystemText</AssemblyName>
+    <RootNamespace>Outsourced.DataCube.Json.SystemText</RootNamespace>
+    <Description>System.Text.Json serialization support for Outsourced.DataCube.</Description>
+    <PackageId>Outsourced.DataCube.Json.SystemText</PackageId>
+    <PackageTags>$(PackageTags);JSON;System.Text.Json</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Outsourced.DataCube\Outsourced.DataCube.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.0" />
+  </ItemGroup>
+
+</Project>
+</file>
+
+<file path="SerializerSettings/CubeSerializerSettings.cs">
+namespace Outsourced.DataCube.Json.SystemText.SerializerSettings;
+
+using System.Linq;
+using global::System.Text.Json;
+using global::System.Text.Json.Serialization;
+using Converters;
+
+/// <summary>
+/// Configures <see cref="JsonSerializerOptions"/> for DataCube serialization.
+/// </summary>
+public static class CubeSerializerSettings
+{
+  /// <summary>
+  /// Applies the library's recommended converters and options to an existing <see cref="JsonSerializerOptions"/> instance.
+  /// </summary>
+  public static JsonSerializerOptions Initialize(JsonSerializerOptions options = null)
+  {
+    options ??= new JsonSerializerOptions();
+
+    options.PropertyNameCaseInsensitive = true;
+    options.WriteIndented = true;
+    options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault;
+
+    AddConverter<ObjectValueJsonConverter>(options, static () => new ObjectValueJsonConverter());
+    AddConverter<DimensionJsonConverterFactory>(options, static () => new DimensionJsonConverterFactory());
+    AddConverter<DimensionValueJsonConverterFactory>(options, static () => new DimensionValueJsonConverterFactory());
+    AddConverter<MetricJsonConverterFactory>(options, static () => new MetricJsonConverterFactory());
+    AddConverter<MetricCollectionJsonConverterFactory>(options, static () => new MetricCollectionJsonConverterFactory());
+    AddConverter<FactGroupJsonConverter>(options, static () => new FactGroupJsonConverter());
+
+    return options;
+  }
+
+  /// <summary>
+  /// Creates a new <see cref="JsonSerializerOptions"/> instance configured for DataCube serialization.
+  /// </summary>
+  public static JsonSerializerOptions CreateOptions()
+  {
+    return Initialize();
+  }
+
+  private static void AddConverter<TConverter>(JsonSerializerOptions options, Func<TConverter> factory)
+    where TConverter : JsonConverter
+  {
+    if (options.Converters.OfType<TConverter>().Any())
+      return;
+
+    options.Converters.Add(factory());
+  }
+}
+</file>
+
+</files>

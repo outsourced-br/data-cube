@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>Outsourced.DataCube.Json.NewtonSoft</AssemblyName>
+    <RootNamespace>Outsourced.DataCube.Json.NewtonSoft</RootNamespace>
+    <Description>Newtonsoft.Json serialization support for Outsourced.DataCube.</Description>
+    <PackageId>Outsourced.DataCube.Json.NewtonSoft</PackageId>
+    <PackageTags>$(PackageTags);JSON;Newtonsoft.Json</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Outsourced.DataCube\Outsourced.DataCube.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.0" />
+  </ItemGroup>
+
+</Project>

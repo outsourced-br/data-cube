@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use Outsourced.DataCube, please cite it using this metadata."
+title: "Outsourced.DataCube"
+type: software
+abstract: "An in-memory analytics cube for .NET with optional Newtonsoft.Json and System.Text.Json serialization packages."
+authors:
+  - name: "Outsourced"
+license: "GPL-3.0-only"
+keywords:
+  - "dotnet"
+  - "analytics"
+  - "olap"
+  - "data-cube"
+  - "json"

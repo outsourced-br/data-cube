@@ -1,0 +1,118 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build-test-pack:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore ./Outsourced.DataCube.sln
+
+      - name: Build
+        run: dotnet build ./Outsourced.DataCube.sln -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - name: Test
+        run: dotnet test ./Outsourced.DataCube.sln -c Release --no-build -p:ContinuousIntegrationBuild=true --collect:"XPlat Code Coverage" --results-directory ./artifacts/TestResults/coverage
+
+      - name: Enforce coverage thresholds
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+
+          coverage_files = glob.glob("artifacts/TestResults/coverage/**/coverage.cobertura.xml", recursive=True)
+          if not coverage_files:
+              print("No coverage files were produced.", file=sys.stderr)
+              sys.exit(1)
+
+          merged = {}
+          for path in coverage_files:
+              root = ET.parse(path).getroot()
+              for package in root.findall("./packages/package"):
+                  package_name = package.attrib.get("name", "")
+                  if not package_name.startswith("Outsourced.DataCube"):
+                      continue
+
+                  for cls in package.findall("./classes/class"):
+                      filename = cls.attrib.get("filename")
+                      if not filename:
+                          continue
+
+                      filename = filename.replace("\\\\", "/").replace("\\", "/")
+
+                      merged_lines = merged.setdefault(filename, {})
+                      for line in cls.findall("./lines/line"):
+                          number = int(line.attrib["number"])
+                          hits = int(line.attrib["hits"])
+                          merged_lines[number] = max(merged_lines.get(number, 0), hits)
+
+          total_lines = sum(len(lines) for lines in merged.values())
+          covered_lines = sum(1 for lines in merged.values() for hits in lines.values() if hits > 0)
+          overall_rate = covered_lines / total_lines if total_lines else 0.0
+
+          target_file = "Extensions/InternalExtensions.cs"
+          target_lines = merged.get(target_file)
+          target_rate = None
+          if target_lines:
+              target_total = len(target_lines)
+              target_covered = sum(1 for hits in target_lines.values() if hits > 0)
+              target_rate = target_covered / target_total if target_total else 0.0
+
+          summary_lines = [
+              f"Overall merged line coverage: {overall_rate:.2%} ({covered_lines}/{total_lines})",
+          ]
+          if target_rate is not None:
+              summary_lines.append(
+                  f"{target_file}: {target_rate:.2%} "
+                  f"({sum(1 for hits in target_lines.values() if hits > 0)}/{len(target_lines)})"
+              )
+          else:
+              summary_lines.append(f"{target_file}: missing from merged coverage output")
+
+          summary = "\n".join(summary_lines)
+          print(summary)
+
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary:
+              with open(step_summary, "a", encoding="utf-8") as handle:
+                  handle.write("## Coverage\n")
+                  handle.write(summary)
+                  handle.write("\n")
+
+          failures = []
+          if overall_rate < 0.50:
+              failures.append(f"Overall merged line coverage {overall_rate:.2%} is below the 50.00% threshold.")
+
+          if target_rate is None:
+              failures.append(f"Coverage data for {target_file} was not found.")
+          elif target_rate < 0.75:
+              failures.append(f"{target_file} coverage {target_rate:.2%} is below the 75.00% threshold.")
+
+          if failures:
+              print("\n".join(failures), file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      - name: Pack
+        run: dotnet pack ./Outsourced.DataCube.sln -c Release --no-build -p:ContinuousIntegrationBuild=true
