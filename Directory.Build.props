@@ -10,7 +10,7 @@
     <Authors>Outsourced</Authors>
     <Company>Outsourced</Company>
     <Copyright>Copyright © 2026 Outsourced</Copyright>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <PackageTags>OLAP;Cube;Analytics;DataCube;In-process;AnalyticsCube</PackageTags>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
