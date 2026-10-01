@@ -2,8 +2,8 @@
 
 ## Runtime And Language
 
-- .NET 10 (`net10.0`)
-- C# 14
+- .NET 11 (`net11.0`)
+- C# 15
 - `ImplicitUsings` enabled
 - Nullable reference types are globally disabled in shared build props, with selective `#nullable enable` adoption in files that already have targeted annotations
 
@@ -21,7 +21,7 @@
 
 ### JSON adapter: `Outsourced.DataCube.Json.SystemText`
 
-- `System.Text.Json` from the .NET 10 shared framework
+- `System.Text.Json` from the .NET 11 shared framework
 - [`Microsoft.IO.RecyclableMemoryStream` 3.0.0](https://www.nuget.org/packages/Microsoft.IO.RecyclableMemoryStream/3.0.0)
 
 ## Test Stack
@@ -52,7 +52,7 @@ When suggesting changes, assume this repository wants low-dependency, package-fr
 
 Prefer:
 
-- .NET 10 and BCL features
+- .NET 11 and BCL features
 - SDK-style project settings
 - NUnit for tests
 - lightweight library patterns

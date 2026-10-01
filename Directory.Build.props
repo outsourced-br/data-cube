@@ -10,7 +10,7 @@
     <Authors>Outsourced</Authors>
     <Company>Outsourced</Company>
     <Copyright>Copyright © 2026 Outsourced</Copyright>
-    <Version>1.0.6</Version>
+    <Version>1.1.0</Version>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <PackageTags>OLAP;Cube;Analytics;DataCube;In-process;AnalyticsCube</PackageTags>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
@@ -29,8 +29,8 @@
 
   <PropertyGroup>
     <!-- Compiler Settings -->
-    <TargetFramework>net10.0</TargetFramework>
-    <LangVersion>14.0</LangVersion>
+    <TargetFramework>net11.0</TargetFramework>
+    <LangVersion>15.0</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
